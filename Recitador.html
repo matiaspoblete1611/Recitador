@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e17">
+<title>Lector en Movimiento</title>
+<style>
+  :root{
+    --bg:#0a0e17; --panel:#141a26; --line:#1e2a42;
+    --txt:#e8eefc; --muted:#8fa0be;
+    --ok:#39d98a; --warn:#ffb020; --bad:#ff4d6d; --accent:#5b8cff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:radial-gradient(120% 80% at 50% 0%, #16203a 0%, #0a0e17 62%);
+    color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior:none; -webkit-user-select:none; user-select:none;
+  }
+  .screen{
+    position:fixed; inset:0; display:none; flex-direction:column;
+    padding:calc(14px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom));
+  }
+  .screen.active{display:flex;}
+
+  /* ---------- Botones ---------- */
+  .btn{
+    display:block; width:100%; border:0; border-radius:16px; padding:17px 18px;
+    font-size:17px; font-weight:700; color:#fff; cursor:pointer;
+    background:linear-gradient(180deg,#5b8cff,#3a63d8);
+    box-shadow:0 8px 24px rgba(59,99,216,.35);
+    transition:transform .08s ease, opacity .2s;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn[disabled]{opacity:.5;pointer-events:none;}
+  .btn.ghost{
+    background:transparent; color:var(--muted);
+    border:1px solid var(--line); box-shadow:none; font-weight:600;
+  }
+
+  /* ---------- Pantalla inicio ---------- */
+  #screen-start{overflow-y:auto; justify-content:center; gap:16px;}
+  h1.title{
+    font-size:clamp(26px,8vw,36px); line-height:1.1; margin:0 0 6px;
+    background:linear-gradient(90deg,#8fb4ff,#39d98a);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-weight:800; letter-spacing:-.02em;
+  }
+  .lead{color:var(--muted); font-size:15px; line-height:1.55; margin:0 0 8px;}
+  .lead b{color:var(--txt);}
+  .card{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:18px; padding:14px 16px;
+  }
+  .card h3{margin:0 0 10px; font-size:13px; text-transform:uppercase;
+    letter-spacing:.12em; color:var(--muted); font-weight:700;}
+  .texts{display:flex; flex-direction:column; gap:8px;}
+  .topt{
+    display:flex; align-items:center; gap:10px; padding:12px 14px;
+    border-radius:14px; border:1px solid var(--line); background:#101724;
+    color:var(--txt); font-size:14px; font-weight:600; text-align:left; cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  .topt .dot{
+    width:18px;height:18px;border-radius:50%;border:2px solid #35456a;flex:0 0 auto;
+    position:relative; transition:.15s;
+  }
+  .topt.sel{border-color:#3a63d8; background:#16203a;}
+  .topt.sel .dot{border-color:var(--accent); background:var(--accent);
+    box-shadow:0 0 0 4px rgba(91,140,255,.18);}
+
+  /* ---------- Pantalla juego ---------- */
+  #screen-play{gap:10px;}
+  .topbar{display:flex; flex-direction:column; gap:9px;}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .lbl{font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+       color:var(--muted); font-weight:700;}
+  .val{font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1;}
+  .val small{font-size:12px; font-weight:600; color:var(--muted);}
+  #cam{
+    width:74px; height:56px; object-fit:cover; border-radius:12px;
+    border:1px solid var(--line); background:#000; opacity:.85; flex:0 0 auto;
+    transform:scaleX(-1); /* espejo: cámara frontal */
+  }
+
+  .gauge{
+    position:relative; height:28px; border-radius:14px; background:#0d1320;
+    border:1px solid var(--line); overflow:hidden;
+  }
+  .band{
+    position:absolute; top:0; bottom:0; left:0; width:0;
+    background:linear-gradient(180deg,rgba(57,217,138,.30),rgba(57,217,138,.13));
+    border-left:2px dashed rgba(57,217,138,.75);
+    border-right:2px dashed rgba(57,217,138,.75);
+    transition:left .25s ease, width .25s ease;
+  }
+  .fill{
+    position:absolute; top:0; bottom:0; left:0; width:0;
+    background:linear-gradient(90deg,rgba(91,140,255,.15),rgba(91,140,255,.55));
+    transition:background .2s;
+  }
+  .marker{
+    position:absolute; top:-3px; bottom:-3px; left:0; width:3px; border-radius:2px;
+    background:#fff; box-shadow:0 0 12px rgba(255,255,255,.9);
+    transform:translateX(-1.5px);
+  }
+  .status{
+    text-align:center; font-size:14px; font-weight:700; padding:8px;
+    border-radius:12px; background:#101724; border:1px solid var(--line);
+    color:var(--muted); transition:color .2s, border-color .2s, background .2s;
+  }
+  .status.ok{color:var(--ok); border-color:rgba(57,217,138,.4); background:rgba(57,217,138,.08);}
+  .status.warn{color:var(--warn); border-color:rgba(255,176,32,.4); background:rgba(255,176,32,.08);}
+  .status.bad{color:var(--bad); border-color:rgba(255,77,109,.45); background:rgba(255,77,109,.1);
+              animation:pulse .7s infinite;}
+  @keyframes pulse{50%{background:rgba(255,77,109,.22);}}
+  .sensors{font-size:11px; color:#5d6c8a; text-align:center; letter-spacing:.03em;}
+
+  .textwrap{
+    flex:1; overflow-y:auto; padding:18px 18px 24px;
+    background:var(--panel); border:1px solid var(--line); border-radius:18px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .textwrap h2{
+    margin:0 0 14px; font-size:13px; text-transform:uppercase; letter-spacing:.12em;
+    color:var(--accent); font-weight:800;
+  }
+  .textwrap p{
+    margin:0; white-space:pre-wrap; font-size:17px; line-height:1.85;
+    color:#dbe5f7; font-family:Georgia,"Times New Roman",serif;
+  }
+  .bottombar{display:flex; gap:10px;}
+
+  /* ---------- Pantalla final ---------- */
+  #screen-end{justify-content:center; gap:18px;}
+  .endcard{background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:22px 18px;}
+  .endcard h1{margin:0 0 18px; font-size:26px; text-align:center;}
+  .stats{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;}
+  .stats > div{
+    background:#101724; border:1px solid var(--line); border-radius:14px;
+    padding:14px 12px; text-align:center;
+  }
+  .stats span{display:block; font-size:23px; font-weight:800; color:var(--ok);
+              font-variant-numeric:tabular-nums;}
+  .stats small{display:block; margin-top:4px; font-size:11px; color:var(--muted);
+               text-transform:uppercase; letter-spacing:.08em;}
+  .endcard .btn + .btn{margin-top:10px;}
+</style>
+</head>
+<body>
+
+<!-- ============ PANTALLA: INICIO ============ -->
+<section id="screen-start" class="screen active">
+  <div>
+    <h1 class="title">Lector en Movimiento</h1>
+    <p class="lead">
+      Lee el texto en voz alta y <b>balancea suavemente el teléfono</b> al ritmo de tu lectura.
+      La app mide el movimiento con la <b>cámara frontal</b> (con tu rostro como referencia) y el <b>IMU</b> (acelerómetro + giroscopio),
+      aprende tu velocidad media y te marca un <b>margen automático</b>.
+      Si te frenas demasiado, <b>pitará</b>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Elige tu lectura</h3>
+    <div class="texts" id="textsList"></div>
+  </div>
+
+  <button id="btnStart" class="btn">Comenzar</button>
+  <p class="lead" style="font-size:12px;text-align:center;margin:0;">
+    Al pulsar Comenzar se te pedirá permiso de cámara y de movimiento (iOS).
+  </p>
+</section>
+
+<!-- ============ PANTALLA: JUEGO ============ -->
+<section id="screen-play" class="screen">
+  <div class="topbar">
+    <div class="row">
+      <div>
+        <div class="lbl" id="phaseLabel">Preparando…</div>
+        <div class="val"><span id="speedVal">0.00</span> <small>u/s</small></div>
+      </div>
+      <video id="cam" playsinline muted autoplay></video>
+    </div>
+    <div class="gauge">
+      <div class="band" id="band"></div>
+      <div class="fill" id="fill"></div>
+      <div class="marker" id="marker"></div>
+    </div>
+    <div class="status" id="status">Prepárate…</div>
+    <div class="sensors" id="sensors"></div>
+  </div>
+
+  <div class="textwrap">
+    <h2 id="textTitle"></h2>
+    <p id="textBody"></p>
+  </div>
+
+  <div class="bottombar">
+    <button id="btnStop" class="btn ghost">Terminar</button>
+  </div>
+</section>
+
+<!-- ============ PANTALLA: FINAL ============ -->
+<section id="screen-end" class="screen">
+  <div class="endcard">
+    <h1>¡Lectura terminada!</h1>
+    <div class="stats">
+      <div><span id="stScore">0%</span><small>tiempo en ritmo</small></div>
+      <div><span id="stAvg">0.00</span><small>velocidad media</small></div>
+      <div><span id="stPeak">0.00</span><small>pico máximo</small></div>
+      <div><span id="stTime">0s</span><small>duración</small></div>
+    </div>
+    <button id="btnAgain" class="btn">Leer otra vez</button>
+    <button id="btnHome" class="btn ghost">Elegir otro texto</button>
+  </div>
+</section>
+
+<script>
+"use strict";
+
+/* =========================================================
+   0. Utilidades
+   ========================================================= */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const clamp = (v,a,b) => v < a ? a : (v > b ? b : v);
+
+/* =========================================================
+   1. Configuración del juego
+   ========================================================= */
+const CFG = {
+  calibSec:      5.0,   // duración de la calibración
+  lowRatio:      0.55,  // umbral inferior  = pace * 0.55  (margen generoso)
+  highRatio:     1.85,  // umbral superior  = pace * 1.85
+  lowHoldSec:    0.45,  // tiempo por debajo del umbral antes de pitar
+  beepIntervalMs: 700,  // separación entre pitidos mientras está bajo
+  camWidth:      64,    // resolución de análisis de cámara
+  camHeight:     48,
+  camNormDiv:    10,    // divisor de normalización de la cámara
+  accelNormDiv:  4,     // m/s²  -> 1.0
+  gyroNormDiv:   100    // º/s   -> 1.0
+};
+
+/* =========================================================
+   2. Textos de lectura
+   ========================================================= */
+const TEXTS = [
+  {
+    title: "Rimas — Gustavo Adolfo Bécquer",
+    body: `¿Qué es poesía?, dices mientras clavas
+en mi pupila tu pupila azul.
+¡Qué es poesía! ¿Y tú me lo preguntas?
+Poesía... eres tú.
+
+Por una mirada, un mundo;
+por una sonrisa, un cielo;
+por un beso... yo no sé
+qué te diera por un beso.
+
+Volverán las oscuras golondrinas
+en tu balcón sus nidos a colgar,
+y otra vez con el ala a sus cristales
+jugando llamarán.`
+  },
+  {
+    title: "Proverbios y cantares XXIX — Antonio Machado",
+    body: `Caminante, son tus huellas
+el camino y nada más;
+caminante, no hay camino,
+se hace camino al andar.
+Al andar se hace camino,
+y al volver la vista atrás
+se ve la senda que nunca
+se ha de volver a pisar.
+Caminante, no hay camino,
+sino estelas en la mar.`
+  },
+  {
+    title: "El faro — microcuento",
+    body: `El faro llevaba cien años girando en la oscuridad, sin que ningún barco
+pasara jamás por aquel rincón olvidado del mar.
+
+Cada noche el farero subía los ciento cuarenta escalones, encendía la
+lámpara y se sentaba a mirar el agua negra.
+
+Una madrugada, un pájaro diminuto chocó contra el cristal, se posó en la
+barandilla y se quedó allí, temblando, hasta que salió el sol.
+
+Desde entonces el farero supo que su luz no estaba hecha para los barcos,
+sino para todo lo que se pierde y necesita un punto fijo al que volver.`
+  },
+  {
+    title: "Canción del pirata — José de Espronceda",
+    body: `Con diez cañones por banda,
+viento en popa, a toda vela,
+no corta el mar, sino vuela
+un velero bergantín.
+
+Bajel pirata que llaman,
+por su bravura, el Temido,
+en todo mar conocido
+del uno al otro confín.
+
+Que es mi barco mi tesoro,
+que es mi dios la libertad,
+mi ley, la fuerza y el viento,
+mi única patria, la mar.`
+  }
+];
+
+/* =========================================================
+   3. Referencias DOM
+   ========================================================= */
+const camVideo    = $("cam");
+const textsList   = $("textsList");
+const btnStart    = $("btnStart");
+const btnStop     = $("btnStop");
+const btnAgain    = $("btnAgain");
+const btnHome     = $("btnHome");
+const phaseLabel  = $("phaseLabel");
+const speedVal    = $("speedVal");
+const statusEl    = $("status");
+const sensorsEl   = $("sensors");
+const bandEl      = $("band");
+const fillEl      = $("fill");
+const markerEl    = $("marker");
+const textTitle   = $("textTitle");
+const textBody    = $("textBody");
+const stScore     = $("stScore");
+const stAvg       = $("stAvg");
+const stPeak      = $("stPeak");
+const stTime      = $("stTime");
+
+/* =========================================================
+   4. Audio (pitidos) y vibración
+   ========================================================= */
+let audioCtx = null;
+
+function ensureAudio(){
+  if(!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(AC) audioCtx = new AC();
+  }
+  if(audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function beep(freq, dur, vol, type){
+  if(!audioCtx) return;
+  type = type || "sine";
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.linearRampToValueAtTime(vol, t + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.03);
+}
+
+function vibrate(ms){
+  if(navigator.vibrate) { try { navigator.vibrate(ms); } catch(e){} }
+}
+
+/* =========================================================
+   5. Sensores: cámara (diferencia de fotogramas)
+   ========================================================= */
+let camStream = null;
+let camReady  = false;
+let camRaw    = 0;          // diferencia media entre fotogramas (0..255)
+let prevGray  = null;
+
+const camCanvas = document.createElement("canvas");
+camCanvas.width  = CFG.camWidth;
+camCanvas.height = CFG.camHeight;
+const camCtx = camCanvas.getContext("2d", { willReadFrequently: true });
+
+async function startCamera(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    camReady = false;
+    return false;
+  }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "user" },
+        width:  { ideal: 320 },
+        height: { ideal: 240 },
+        frameRate: { ideal: 30 }
+      },
+      audio: false
+    });
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+    camReady = true;
+    prevGray = null;
+    return true;
+  }catch(err){
+    camReady = false;
+    return false;
+  }
+}
+
+function stopCamera(){
+  if(camStream){
+    camStream.getTracks().forEach(t => { try{ t.stop(); }catch(e){} });
+    camStream = null;
+  }
+  camVideo.srcObject = null;
+  camReady = false;
+  prevGray = null;
+  camRaw = 0;
+}
+
+function processCameraFrame(){
+  if(!camReady || camVideo.readyState < 2) return;
+  try{
+    camCtx.drawImage(camVideo, 0, 0, CFG.camWidth, CFG.camHeight);
+    const data = camCtx.getImageData(0, 0, CFG.camWidth, CFG.camHeight).data;
+    const n = CFG.camWidth * CFG.camHeight;
+    const gray = new Float32Array(n);
+
+    for(let i = 0, p = 0; p < n; i += 4, p++){
+      gray[p] = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+    }
+
+    if(prevGray){
+      let sum = 0;
+      for(let p = 0; p < n; p++) sum += Math.abs(gray[p] - prevGray[p]);
+      const mean = sum / n;
+      camRaw = camRaw * 0.6 + mean * 0.4;   // suavizado
+    }
+    prevGray = gray;
+  }catch(e){ /* ignorar */ }
+}
+
+/* =========================================================
+   6. Sensores: IMU (acelerómetro + giroscopio)
+   ========================================================= */
+let imuReady     = false;
+let motionCount  = 0;
+let accelLin     = 0;   // aceleración lineal suavizada (m/s²)
+let gyroMag      = 0;   // velocidad angular suavizada (º/s)
+const grav = { x:0, y:0, z:0, init:false };
+
+function onMotion(e){
+  motionCount++;
+
+  // ---- Aceleración lineal ----
+  let lin = 0;
+  const acc = e.acceleration;
+  const ag  = e.accelerationIncludingGravity;
+
+  if(acc && typeof acc.x === "number"){
+    // El dispositivo ya nos da la aceleración sin gravedad
+    lin = Math.hypot(acc.x || 0, acc.y || 0, acc.z || 0);
+  } else if(ag && typeof ag.x === "number"){
+    // Estimamos la gravedad con un paso bajo y la restamos
+    if(!grav.init){ grav.x = ag.x||0; grav.y = ag.y||0; grav.z = ag.z||0; grav.init = true; }
+    const k = 0.9;
+    grav.x = grav.x * k + (ag.x || 0) * (1 - k);
+    grav.y = grav.y * k + (ag.y || 0) * (1 - k);
+    grav.z = grav.z * k + (ag.z || 0) * (1 - k);
+    lin = Math.hypot((ag.x||0) - grav.x, (ag.y||0) - grav.y, (ag.z||0) - grav.z);
+  }
+  accelLin = accelLin * 0.7 + lin * 0.3;
+
+  // ---- Velocidad angular ----
+  const r = e.rotationRate;
+  if(r){
+    const g = Math.hypot(r.alpha || 0, r.beta || 0, r.gamma || 0);
+    gyroMag = gyroMag * 0.7 + g * 0.3;
+  }
+}
+
+async function initMotion(){
+  motionCount = 0;
+  imuReady = false;
+
+  if(typeof DeviceMotionEvent === "undefined") return false;
+
+  // iOS 13+ requiere permiso explícito dentro de un gesto del usuario
+  if(typeof DeviceMotionEvent.requestPermission === "function"){
+    try{
+      const res = await DeviceMotionEvent.requestPermission();
+      if(res !== "granted") return false;
+    }catch(err){
+      return false;
+    }
+  }
+
+  window.addEventListener("devicemotion", onMotion, { passive: true });
+  await sleep(900);
+  imuReady = motionCount > 3;
+  return imuReady;
+}
+
+/* =========================================================
+   7. Estado del juego
+   ========================================================= */
+const G = {
+  phase: "idle",        // idle | calib | play | end
+  selected: 0,
+
+  // calibración
+  calibT: 0,
+  samples: [],
+  attempts: 0,
+
+  // ritmo
+  pace: 0.30,
+  initPace: 0.30,
+  low: 0,
+  high: 1,
+
+  // ventanas deslizantes de máximos
+  windows: [],
+  curWinMax: 0,
+  winT: 0,
+
+  // avisos
+  lowTimer: 0,
+  lastBeep: 0,
+  lastStatus: "",
+
+  // estadísticas
+  inBand: 0,
+  total: 0,
+  sum: 0,
+  count: 0,
+  peak: 0
+};
+
+/* =========================================================
+   8. Cambio de pantallas
+   ========================================================= */
+function showScreen(name){
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $("screen-" + name).classList.add("active");
+}
+
+function setStatus(kind, text){
+  const key = kind + "|" + text;
+  if(key === G.lastStatus) return;
+  G.lastStatus = key;
+  statusEl.className = "status " + kind;
+  statusEl.textContent = text;
+}
+
+function setPhase(text){
+  phaseLabel.textContent = text;
+}
+
+/* =========================================================
+   9. Lógica de calibración y ritmo
+   ========================================================= */
+function resetRun(){
+  G.phase = "idle";
+  G.calibT = 0;
+  G.samples = [];
+  G.attempts = 0;
+  G.windows = [];
+  G.curWinMax = 0;
+  G.winT = 0;
+  G.lowTimer = 0;
+  G.lastBeep = 0;
+  G.lastStatus = "";
+  G.inBand = 0;
+  G.total = 0;
+  G.sum = 0;
+  G.count = 0;
+  G.peak = 0;
+  G.low = 0;
+  G.high = 1;
+  G.pace = 0.30;
+  G.initPace = 0.30;
+  camRaw = 0;
+  accelLin = 0;
+  gyroMag = 0;
+  grav.init = false;
+  speedSmooth = 0;
+}
+
+function beginCalibration(){
+  G.phase = "calib";
+  G.calibT = 0;
+  G.samples = [];
+  G.low = 0;
+  G.high = 0;
+  bandEl.style.opacity = "0";
+  setPhase("Calibrando");
+  setStatus("warn", "Muévete al ritmo de tu lectura…");
+}
+
+function finishCalibration(){
+  const s = G.samples.slice().sort((a,b) => a - b);
+  const maxV = s.length ? s[s.length - 1] : 0;
+  const avgV = s.length ? s.reduce((a,b) => a+b, 0) / s.length : 0;
+
+  // Si no se detectó movimiento suficiente, reintentamos una vez
+  if(maxV < 0.25 && G.attempts < 2){
+    G.attempts++;
+    setStatus("bad", "No detecté movimiento. ¡Muévete más!");
+    beep(300, 0.18, 0.2, "square");
+    G.calibT = 0;
+    G.samples = [];
+    return;
+  }
+
+  // Ritmo base = mezcla del pico y la media, con un mínimo jugable
+  let pace = Math.max(0.55 * maxV + 0.45 * avgV, 0.15);
+
+  G.initPace = pace;
+  G.pace     = pace;
+  G.low      = pace * CFG.lowRatio;
+  G.high     = pace * CFG.highRatio;
+
+  G.windows = [];
+  G.curWinMax = 0;
+  G.winT = 0;
+
+  G.phase = "play";
+  bandEl.style.opacity = "1";
+  setPhase("En ritmo");
+  setStatus("ok", "¡Adelante! Mantén el ritmo");
+  beep(880, 0.10, 0.16);
+  beep(1180, 0.10, 0.12);
+}
+
+function recomputePace(){
+  if(!G.windows.length) return;
+  const avg = G.windows.reduce((a,b) => a+b, 0) / G.windows.length;
+  // El ritmo se adapta, pero acotado para que no se "desinfle" si te paras
+  let p = clamp(avg, G.initPace * 0.70, G.initPace * 1.50);
+  G.pace = p;
+  G.low  = p * CFG.lowRatio;
+  G.high = p * CFG.highRatio;
+}
+
+/* =========================================================
+   10. Bucle principal
+   ========================================================= */
+let speedSmooth = 0;
+let lastFrameTs = 0;
+let camAccum = 0;
+
+function loop(ts){
+  requestAnimationFrame(loop);
+
+  if(!lastFrameTs) lastFrameTs = ts;
+  let dt = (ts - lastFrameTs) / 1000;
+  lastFrameTs = ts;
+  dt = Math.min(dt, 0.1);
+
+  const running = (G.phase === "calib" || G.phase === "play");
+  if(!running) return;
+
+  /* ---- Cámara a ~20 fps ---- */
+  camAccum += dt;
+  if(camAccum >= 0.05){
+    camAccum = 0;
+    processCameraFrame();
+  }
+
+  /* ---- Cálculo de la velocidad combinada ---- */
+  const camN = clamp(camRaw / CFG.camNormDiv, 0, 3);
+  const accN = clamp(accelLin / CFG.accelNormDiv, 0, 3);
+  const gyrN = clamp(gyroMag / CFG.gyroNormDiv, 0, 3);
+  const imuN = 0.60 * accN + 0.40 * gyrN;
+
+  let v;
+  if(camReady && imuReady)      v = 0.45 * camN + 0.55 * imuN;
+  else if(imuReady)             v = imuN;
+  else if(camReady)             v = camN;
+  else                          v = 0;
+
+  /* ---- Suavizado exponencial (tau ≈ 150 ms) ---- */
+  const a = 1 - Math.exp(-dt / 0.15);
+  speedSmooth += (v - speedSmooth) * a;
+
+  /* ---- Lógica ---- */
+  if(G.phase === "calib"){
+    G.calibT += dt;
+    G.samples.push(speedSmooth);
+    setStatus("warn",
+      "Calibrando tu ritmo… " +
+      Math.ceil(CFG.calibSec - G.calibT) + "s");
+    if(G.calibT >= CFG.calibSec) finishCalibration();
+  } else {
+    updatePlay(dt, speedSmooth);
+  }
+
+  renderUI(speedSmooth);
+}
+
+/* =========================================================
+   11. Lógica de juego durante la lectura
+   ========================================================= */
+function updatePlay(dt, v){
+  G.total += dt;
+  G.sum   += v;
+  G.count++;
+  if(v > G.peak) G.peak = v;
+
+  /* --- Ventanas de 500 ms para el ritmo adaptativo --- */
+  G.curWinMax = Math.max(G.curWinMax, v);
+  G.winT += dt;
+  if(G.winT >= 0.5){
+    G.winT = 0;
+    if(G.curWinMax > G.low * 0.95){
+      G.windows.push(G.curWinMax);
+      if(G.windows.length > 10) G.windows.shift();
+      if(G.windows.length >= 3) recomputePace();
+    }
+    G.curWinMax = 0;
+  }
+
+  /* --- Tiempo dentro del margen --- */
+  if(v >= G.low && v <= G.high) G.inBand += dt;
+
+  /* --- Avisos --- */
+  const now = performance.now();
+
+  if(v < G.low){
+    G.lowTimer += dt;
+
+    if(G.lowTimer > CFG.lowHoldSec){
+      setStatus("bad", "¡Demasiado lento! Sigue moviéndote");
+      if(now - G.lastBeep > CFG.beepIntervalMs){
+        G.lastBeep = now;
+        beep(740, 0.11, 0.26, "sine");
+        vibrate(45);
+      }
+    } else {
+      setStatus("warn", "Mueve un poco más…");
+    }
+
+  } else if(v > G.high){
+    G.lowTimer = 0;
+    setStatus("warn", "Vas un poco rápido");
+    if(now - G.lastBeep > 1200){
+      G.lastBeep = now;
+      beep(1250, 0.05, 0.09, "sine");
+    }
+
+  } else {
+    G.lowTimer = 0;
+    setStatus("ok", "¡Ritmo perfecto!");
+  }
+}
+
+/* =========================================================
+   12. Render de la interfaz
+   ========================================================= */
+function renderUI(v){
+  speedVal.textContent = v.toFixed(2);
+
+  const scaleMax = Math.max(G.high * 1.7, v * 1.15, 0.4);
+
+  if(G.phase === "play"){
+    const left  = clamp(G.low  / scaleMax * 100, 0, 100);
+    const right = clamp(G.high / scaleMax * 100, 0, 100);
+    bandEl.style.left  = left + "%";
+    bandEl.style.width = Math.max(0, right - left) + "%";
+  }
+
+  const pct = clamp(v / scaleMax * 100, 0, 100);
+  fillEl.style.width  = pct + "%";
+  markerEl.style.left = pct + "%";
+
+  // Color del relleno según el estado
+  if(G.phase === "play"){
+    if(v < G.low){
+      fillEl.style.background = "linear-gradient(90deg,rgba(255,77,109,.2),rgba(255,77,109,.65))";
+    } else if(v > G.high){
+      fillEl.style.background = "linear-gradient(90deg,rgba(255,176,32,.2),rgba(255,176,32,.6))";
+    } else {
+      fillEl.style.background = "linear-gradient(90deg,rgba(57,217,138,.2),rgba(57,217,138,.6))";
+    }
+  } else {
+    fillEl.style.background = "linear-gradient(90deg,rgba(91,140,255,.15),rgba(91,140,255,.55))";
+  }
+}
+
+/* =========================================================
+   13. Inicio / fin de partida
+   ========================================================= */
+async function startGame(){
+  ensureAudio();               // dentro del gesto del usuario
+  resetRun();
+  showScreen("play");
+
+  setPhase("Preparando");
+  setStatus("warn", "Solicitando permisos…");
+  sensorsEl.textContent = "";
+  textTitle.textContent = TEXTS[G.selected].title;
+  textBody.textContent  = TEXTS[G.selected].body;
+  document.querySelector(".textwrap").scrollTop = 0;
+
+  // Permiso de movimiento PRIMERO (iOS exige gesto de usuario)
+  const motionOK = await initMotion();
+  // Después la cámara
+  const camOK = await startCamera();
+
+  sensorsEl.textContent =
+    (motionOK ? "✅ movimiento" : "⚠️ sin movimiento") + "  ·  " +
+    (camOK    ? "✅ cámara"     : "⚠️ sin cámara");
+
+  if(!motionOK && !camOK){
+    setStatus("bad", "Sin acceso a sensores. Revisa los permisos del navegador.");
+    return;
+  }
+
+  await sleep(400);
+  beginCalibration();
+}
+
+function endGame(){
+  if(G.phase !== "play" && G.phase !== "calib") return;
+  G.phase = "end";
+
+  stopCamera();
+
+  const total = Math.max(G.total, 0.001);
+  const score = Math.round(clamp(G.inBand / total, 0, 1) * 100);
+  const avg   = G.count ? G.sum / G.count : 0;
+
+  stScore.textContent = score + "%";
+  stAvg.textContent   = avg.toFixed(2);
+  stPeak.textContent  = G.peak.toFixed(2);
+  stTime.textContent  = Math.round(G.total) + "s";
+
+  beep(660, 0.12, 0.18);
+  setTimeout(() => beep(990, 0.16, 0.18), 150);
+
+  showScreen("end");
+}
+
+/* =========================================================
+   14. Construcción de la lista de textos
+   ========================================================= */
+function buildTextList(){
+  textsList.innerHTML = "";
+  TEXTS.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.className = "topt" + (i === G.selected ? " sel" : "");
+    b.type = "button";
+    b.innerHTML = '<span class="dot"></span><span>' + t.title + "</span>";
+    b.addEventListener("click", () => {
+      G.selected = i;
+      buildTextList();
+      ensureAudio();
+      beep(880, 0.05, 0.08);
+    });
+    textsList.appendChild(b);
+  });
+}
+
+/* =========================================================
+   15. Eventos
+   ========================================================= */
+btnStart.addEventListener("click", startGame);
+btnStop.addEventListener("click", endGame);
+
+btnAgain.addEventListener("click", () => {
+  showScreen("start");
+  startGame();
+});
+
+btnHome.addEventListener("click", () => {
+  showScreen("start");
+});
+
+// Pausa la partida si el usuario sale de la app
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden && (G.phase === "play" || G.phase === "calib")){
+    endGame();
+  }
+});
+
+/* =========================================================
+   16. Arranque
+   ========================================================= */
+buildTextList();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
